@@ -3,86 +3,284 @@
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-<title>Lịch Sử Tưới Cây</title>
+<title>Smart Garden Pro - Hybrid Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+
 <style>
- body{font-family:sans-serif; background:#f4f7f6; padding:10px; max-width:600px; margin:0 auto;}
- .card{background:#fff; padding:20px; border-radius:10px; box-shadow:0 2px 5px rgba(0,0,0,0.1);}
- h2 {text-align:center; color:#2c3e50; margin-top:0;}
- table {width:100%; border-collapse:collapse; margin-top:15px; font-size:14px;}
- th {background:#34495e; color:white; padding:10px; text-align:left;}
- td {border-bottom:1px solid #ddd; padding:12px 10px;}
- .badge-on {color:#155724; font-weight:bold; background:#d4edda; padding:5px 10px; border-radius:15px; font-size:12px;}
- .badge-off {color:#721c24; font-weight:bold; background:#f8d7da; padding:5px 10px; border-radius:15px; font-size:12px;}
- .btn-back {display:block; width:100%; padding:12px; margin-bottom:15px; background:#6c757d; color:white; text-align:center; text-decoration:none; border-radius:5px; font-weight:bold;}
- .btn-back:hover {background:#5a6268;}
- #status {text-align:center; color:gray; font-style:italic;}
+ body{font-family:sans-serif;text-align:center;background:#f4f7f6;padding:10px;color:#333;}
+ 
+ /* Style chung cho Dashboard và History Card */
+ .card{background:#fff;max-width:400px;margin:20px auto;padding:20px;border-radius:15px;box-shadow:0 4px 10px rgba(0,0,0,0.1);}
+ .history-card { max-width:600px; } /* Mở rộng chiều rộng cho bảng lịch sử */
+
+ .row{display:flex;justify-content:space-between;margin:12px 0;border-bottom:1px dashed #eee;padding-bottom:5px;align-items:center;}
+ button{padding:12px;border:none;border-radius:8px;color:#fff;font-weight:bold;margin:5px;cursor:pointer;flex:1;}
+
+ .b-on{background:#27ae60;} .b-off{background:#c0392b;} 
+ .b-auto{background:#2980b9;} .b-man{background:#f39c12;color:#333;}
+ .b-dis{background:#e0e0e0!important;color:#999!important;pointer-events:none;}
+ 
+ /* Nút chuyển trang chung */
+ .b-his { background: #8e44ad; width: 100%; margin-top: 15px; } 
+ .b-his:hover { background: #9b59b6; }
+ a { text-decoration: none; }
+
+ /* Style cho Lịch sử View */
+ h2 {text-align:center; color:#2c3e50; margin-top:0;}
+ table {width:100%; border-collapse:collapse; margin-top:15px; font-size:14px;}
+ th {background:#34495e; color:white; padding:10px; text-align:left;}
+ td {border-bottom:1px solid #ddd; padding:12px 10px;}
+ .badge-on {color:#155724; font-weight:bold; background:#d4edda; padding:5px 10px; border-radius:15px; font-size:12px;}
+ .badge-off {color:#721c24; font-weight:bold; background:#f8d7da; padding:5px 10px; border-radius:15px; font-size:12px;}
+ 
+ /* Tái sử dụng style .btn-back của bạn và đặt màu đồng bộ (ví dụ: b-auto) */
+ .btn-back-spa {display:block; width:100%; padding:12px; margin-bottom:15px; background:#2980b9; color:white; text-align:center; text-decoration:none; border-radius:8px; font-weight:bold; cursor:pointer;}
+ .btn-back-spa:hover {background:#1f6e9e;}
+ 
+ #status {text-align:center; color:gray; font-style:italic;}
+
+ #error-box { display:none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(220,53,69,0.95); color:white; z-index:99; flex-direction:column; justify-content:center; align-items:center;}
+ input[type=number] { width:60px; padding:5px; text-align:center; border:1px solid #ddd; border-radius:5px; }
+ input[type=time] { width:90px; padding:5px; text-align:center; border:1px solid #ddd; border-radius:5px; }
+ input[type=range] { width: 100%; margin-right: 10px; }
+ .save-btn{background:#7f8c8d;font-size:12px;padding:5px 10px;flex:0;}
+ #mqtt-status { font-size: 12px; color: gray; }
 </style>
 </head>
 <body>
 
-<div class='card'>
- <a href="index.html" class="btn-back">⬅ Quay lại Bảng Điều Khiển</a>
- <h2>📜 Nhật Ký Hoạt Động</h2>
- <div id="status">Đang tải dữ liệu từ Cloud...</div>
- 
- <table id="logTable" style="display:none;">
-   <thead>
-     <tr>
-       <th>Thời gian</th>
-       <th>Trạng thái</th>
-       <th>Độ ẩm đất</th>
-     </tr>
-   </thead>
-   <tbody id="tableBody">
-   </tbody>
- </table>
+<div id="error-box"><div style="font-size:20px;font-weight:bold;margin-bottom:20px;">⚠️ CẢNH BÁO!<br>Bơm 3 lần không ẩm!</div><button onclick="mqttSendCmd('MAN')" style="background:white;color:red;width:200px;">TẮT BÁO ĐỘNG</button></div>
+
+<div id="dashboard-view" style="display: block;">
+  <div class='card'>
+    <h3>Vườn Thông Minh MQTT</h3>
+    <div id="mqtt-status">Đang kết nối MQTT...</div>
+    <div class='row'><span>🕒 Giờ:</span><b id='time'>--</b></div>
+    <div class='row'><span>🌡️ Nhiệt độ:</span><b id='temp'>-- °C</b></div>
+    <div class='row'><span>💧 Độ ẩm đất:</span><b id='soil'>--</b></div>
+    <div class='row'><span>⚙️ Chế độ:</span><b id='mode'>--</b></div>
+    <div class='row'><span>🔌 Máy Bơm:</span><b id='pump'>--</b></div>
+
+    <div id='admin' style='margin-top:20px;'>
+      <div style='display:flex;'><button id='btnOn' class='b-on' onclick="mqttSendCmd('ON')">BẬT</button><button id='btnOff' class='b-off' onclick="mqttSendCmd('OFF')">TẮT</button></div>
+      <div style='display:flex;'><button id='btnAu' class='b-auto' onclick="mqttSendCmd('AUTO')">AUTO</button><button id='btnMan' class='b-man' onclick="mqttSendCmd('MAN')">THỦ CÔNG</button></div>
+      
+      <hr style='border:0;border-top:1px solid #eee;margin:15px 0;'>
+      <div class='row' style="display:block;text-align:left;">
+        <div style="display:flex;justify-content:space-between;"><span>🚀 Tốc độ bơm:</span><b id="lblSpd">255</b></div>
+        <div style="display:flex;align-items:center;margin-top:5px;">
+          <input type="range" id="rngSpd" min="70" max="255" oninput="updSpd(this.value)" onchange="sndSpd(this.value)">
+        </div>
+      </div>
+
+      <hr style='border:0;border-top:1px solid #eee;margin:15px 0;'>
+      <div class='row'><span>Đất Khô Bật (>):</span><div><input type='number' id='inS'><button class='save-btn' onclick="setVal('S', 'inS', 1, 1023)">Lưu</button></div></div>
+      <div class='row'><span>Nhiệt Max (<):</span><div><input type='number' id='inT'><button class='save-btn' onclick="setVal('T', 'inT', 0, 100)">Lưu</button></div></div>
+      <div class='row' style="display:block;text-align:left"><div>Giờ Tưới:</div><div style="display:flex;justify-content:space-between;margin-top:5px;"><input type='time' step='1' id='inTS'> - <input type='time' step='1' id='inTE'><button class='save-btn' onclick="setTime()">Lưu</button></div></div>
+
+      <hr style='border:0;border-top:1px dashed #eee;margin:15px 0;'>
+      <div class='row'><span>⏱️ Bơm (s):</span><div><input type='number' id='inPon'><button class='save-btn' onclick="setVal('PON', 'inPon', 1, 300)">Lưu</button></div></div>
+      <div class='row'><span>⏳ Nghỉ (s):</span><div><input type='number' id='inSoak'><button class='save-btn' onclick="setVal('SOAK', 'inSoak', 1, 600)">Lưu</button></div></div>
+
+            <a href="#" onclick="showView('history-view')"> 
+        <button class="b-his">📜 Xem Lịch Sử Tưới Cây</button>
+      </a>
+    </div>
+  </div>
 </div>
 
+<div id="history-view" style="display: none;">
+  <div class='card history-card'>
+        <a href="#" onclick="showView('dashboard-view')" class="btn-back-spa">⬅ Quay lại Bảng Điều Khiển</a>
+    
+    <h2>📜 Nhật Ký Hoạt Động</h2>
+    <div id="status">Đang tải dữ liệu từ Cloud...</div>
+    
+    <table id="logTable" style="display:none;">
+      <thead>
+        <tr>
+          <th>Thời gian</th>
+          <th>Trạng thái</th>
+          <th>Độ ẩm đất</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
 <script>
- // ĐÃ GẮN SẴN LINK DATABASE CỦA BẠN (với lệnh lấy 20 dòng cuối)
- const DB_URL = "https://vuonthongminh-ffe93-default-rtdb.firebaseio.com/history.json?orderBy=\"$key\"&limitToLast=20";
+// === THIẾT LẬP MQTT (Phần này được giữ nguyên) ===
+const MQTT_SERVER = "broker.hivemq.com";
+const MQTT_PORT = 8884; 
+const MQTT_CLIENT_ID = "Web_SmartGarden_" + parseInt(Math.random() * 100000); 
+const TOPIC_STATUS = "sg/esp32/garden1/status";
+const TOPIC_COMMAND = "sg/esp32/garden1/cmd";
+const TOPIC_SETTINGS = "sg/esp32/garden1/set";
 
- async function loadHistory() {
-   try {
-     let response = await fetch(DB_URL);
-     let data = await response.json();
-     
-     let html = "";
-     if(data) {
-       // Chuyển object thành mảng
-       let arr = Object.values(data);
-       // Đảo ngược để xem mới nhất trước
-       arr.reverse(); 
-       
-       arr.forEach(item => {
-         let isBat = item.action.includes("BAT");
-         let badge = isBat 
-             ? `<span class="badge-on">BẬT BƠM</span>` 
-             : `<span class="badge-off">TẮT BƠM</span>`;
-         
-         html += `<tr>
-           <td>${item.time}</td>
-           <td>${badge}</td>
-           <td>${item.soil}</td>
-         </tr>`;
-       });
-       
-       document.getElementById("tableBody").innerHTML = html;
-       document.getElementById("status").style.display = "none";
-       document.getElementById("logTable").style.display = "table";
-     } else {
-       document.getElementById("status").innerText = "Chưa có dữ liệu lịch sử nào.";
-     }
-     
-   } catch (e) {
-     console.error(e);
-     document.getElementById("status").innerText = "Lỗi kết nối! Kiểm tra lại Link hoặc Rules.";
-   }
- }
+let mqttClient;  
 
- // Tải ngay khi mở và cập nhật mỗi 5 giây
- loadHistory();
- setInterval(loadHistory, 5000);
+function mqttConnect() {
+  mqttClient = new Paho.MQTT.Client(MQTT_SERVER, MQTT_PORT, MQTT_CLIENT_ID); 
+  mqttClient.onConnectionLost = onConnectionLost;
+  mqttClient.onMessageArrived = onMessageArrived;
+
+  let options = {timeout: 3, onSuccess: onConnect, onFailure: onFailure, useSSL: true};
+  document.getElementById('mqtt-status').innerText = "Đang kết nối...";
+  mqttClient.connect(options);
+}
+
+function onConnect() {
+  document.getElementById('mqtt-status').innerText = "✅ Đã kết nối MQTT";
+  mqttClient.subscribe(TOPIC_STATUS);
+  console.log("MQTT Connected & Subscribed to " + TOPIC_STATUS);
+}
+
+function onFailure(responseObject) {
+  document.getElementById('mqtt-status').innerText = "❌ Lỗi kết nối MQTT. Thử lại sau 5s.";
+  console.log("MQTT Failed: " + responseObject.errorMessage);
+  setTimeout(mqttConnect, 5000);
+}
+
+function onConnectionLost(responseObject) {
+  if (responseObject.errorCode !== 0) {
+    console.log("MQTT Connection Lost: " + responseObject.errorMessage);
+    mqttConnect();
+  }
+}
+
+function onMessageArrived(message) {
+  if (message.destinationName === TOPIC_STATUS) {
+    updateUI(JSON.parse(message.payloadString));
+  }
+}
+
+function mqttSendCmd(cmd) {
+  if (mqttClient && mqttClient.isConnected()) {
+    message = new Paho.MQTT.Message(cmd);
+    message.destinationName = TOPIC_COMMAND;
+    mqttClient.send(message);
+  } else {
+    alert("Chưa kết nối MQTT! Vui lòng chờ.");
+  }
+}
+
+function mqttSendSetting(key, value) {
+  if (mqttClient && mqttClient.isConnected()) {
+    message = new Paho.MQTT.Message(key + "=" + value);
+    message.destinationName = TOPIC_SETTINGS;
+    mqttClient.send(message);
+  } else {
+    alert("Chưa kết nối MQTT! Vui lòng chờ.");
+  }
+}
+
+function updateUI(d){
+  document.getElementById('time').innerText=d.time;
+  document.getElementById('temp').innerText=d.t + ' °C';
+  document.getElementById('soil').innerText=d.s;
+  document.getElementById('mode').innerText=d.m?'AUTO':'THỦ CÔNG';
+  
+  let p=document.getElementById('pump');
+  p.innerText=d.p?'CHẠY ('+d.sspd+')':'TẮT'; 
+  p.style.color=d.p?'#27ae60':'#c0392b';
+  document.getElementById('error-box').style.display = (d.err == 1) ? 'flex' : 'none';
+
+  if(document.activeElement.tagName!='INPUT' && document.activeElement.tagName!='BUTTON'){
+    document.getElementById('inS').value=d.ss; document.getElementById('inT').value=d.st;
+    document.getElementById('inTS').value=d.sts.substring(0,5); 
+    document.getElementById('inTE').value=d.ste.substring(0,5); 
+    document.getElementById('inPon').value=d.spon; document.getElementById('inSoak').value=d.ssoak;
+    document.getElementById('rngSpd').value=d.sspd; document.getElementById('lblSpd').innerText=d.sspd;
+  }
+  
+  let bOn=document.getElementById('btnOn'), bOff=document.getElementById('btnOff');
+  let bAu=document.getElementById('btnAu'), bMan=document.getElementById('btnMan');
+  if(d.m==1){ 
+    bOn.classList.add('b-dis'); bOff.classList.add('b-dis'); 
+    bAu.style.border="2px solid #333"; bMan.style.border="none"; bMan.style.opacity="0.5"; bAu.style.opacity="1";
+  } else { 
+    bOn.classList.remove('b-dis'); bOff.classList.remove('b-dis'); 
+    bMan.style.border="2px solid #333"; bAu.style.border="none"; bAu.style.opacity="0.5"; bMan.style.opacity="1";
+  }
+};
+
+function updSpd(v){ document.getElementById('lblSpd').innerText = v; }
+function sndSpd(v){ mqttSendSetting('SPD', v); }
+function setVal(key, id, min, max){
+  let val = parseInt(document.getElementById(id).value);
+  if(isNaN(val) || val < min || val > max){ alert("Giá trị ko hợp lệ!"); return;}
+  mqttSendSetting(key, val); alert('Đã lưu!');
+}
+function setTime(){
+  let t1 = document.getElementById('inTS').value; let t2 = document.getElementById('inTE').value;
+  if(t1.length==5) t1+=":00"; if(t2.length==5) t2+=":00";
+  mqttSendSetting('TS', t1); mqttSendSetting('TE', t2); alert('Đã lưu giờ!');
+}
+
+
+// === HÀM XỬ LÝ LỊCH SỬ (Firebase) ===
+const DB_URL = "https://vuonthongminh-ffe93-default-rtdb.firebaseio.com/history.json?orderBy=\"$key\"&limitToLast=20";
+let historyInterval; 
+
+async function loadHistory() {
+  try {
+    let response = await fetch(DB_URL);
+    let data = await response.json();
+    
+    let html = "";
+    if(data) {
+      let arr = Object.values(data);
+      arr.reverse(); 
+      
+      arr.forEach(item => {
+        let isBat = item.action.includes("BAT");
+        let badge = isBat 
+            ? `<span class="badge-on">BẬT BƠM</span>` 
+            : `<span class="badge-off">TẮT BƠM</span>`;
+        
+        html += `<tr><td>${item.time}</td><td>${badge}</td><td>${item.soil}</td></tr>`;
+      });
+      
+      document.getElementById("tableBody").innerHTML = html;
+      document.getElementById("status").style.display = "none";
+      document.getElementById("logTable").style.display = "table";
+    } else {
+      document.getElementById("status").innerText = "Chưa có dữ liệu lịch sử nào.";
+    }
+  } catch (e) {
+    console.error(e);
+    document.getElementById("status").innerText = "Lỗi kết nối! Kiểm tra lại Link hoặc Rules.";
+  }
+}
+
+
+// === HÀM QUẢN LÝ VIEW (SPA) ===
+function showView(viewId) {
+  // Ẩn/Hiện giao diện
+  document.getElementById('dashboard-view').style.display = (viewId === 'dashboard-view') ? 'block' : 'none';
+  document.getElementById('history-view').style.display = (viewId === 'history-view') ? 'block' : 'none';
+  
+  // Xử lý bộ đếm thời gian cho Lịch sử
+  if (viewId === 'history-view') {
+    loadHistory(); // Tải ngay lập tức
+    // Bắt đầu tải lại mỗi 5s
+    historyInterval = setInterval(loadHistory, 5000); 
+  } else {
+    // Ngừng tải lại lịch sử khi quay về Dashboard
+    if (historyInterval) {
+      clearInterval(historyInterval);
+    }
+  }
+}
+
+// Bắt đầu kết nối MQTT VÀ hiển thị Dashboard khi trang tải xong
+window.onload = function() {
+  mqttConnect();
+  showView('dashboard-view');
+};
 </script>
 
 </body>
