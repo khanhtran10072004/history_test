@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>Lịch Sử Tưới Cây</title>
+<style>
+ body{font-family:sans-serif; background:#f4f7f6; padding:10px; max-width:600px; margin:0 auto;}
+ .card{background:#fff; padding:20px; border-radius:10px; box-shadow:0 2px 5px rgba(0,0,0,0.1);}
+ h2 {text-align:center; color:#2c3e50; margin-top:0;}
+ table {width:100%; border-collapse:collapse; margin-top:15px; font-size:14px;}
+ th {background:#34495e; color:white; padding:10px; text-align:left;}
+ td {border-bottom:1px solid #ddd; padding:12px 10px;}
+ .badge-on {color:#155724; font-weight:bold; background:#d4edda; padding:5px 10px; border-radius:15px; font-size:12px;}
+ .badge-off {color:#721c24; font-weight:bold; background:#f8d7da; padding:5px 10px; border-radius:15px; font-size:12px;}
+ .btn-back {display:block; width:100%; padding:12px; margin-bottom:15px; background:#6c757d; color:white; text-align:center; text-decoration:none; border-radius:5px; font-weight:bold;}
+ .btn-back:hover {background:#5a6268;}
+ #status {text-align:center; color:gray; font-style:italic;}
+</style>
+</head>
+<body>
+
+<div class='card'>
+ <a href="index.html" class="btn-back">⬅ Quay lại Bảng Điều Khiển</a>
+ <h2>📜 Nhật Ký Hoạt Động</h2>
+ <div id="status">Đang tải dữ liệu từ Cloud...</div>
+ 
+ <table id="logTable" style="display:none;">
+   <thead>
+     <tr>
+       <th>Thời gian</th>
+       <th>Trạng thái</th>
+       <th>Độ ẩm đất</th>
+     </tr>
+   </thead>
+   <tbody id="tableBody">
+   </tbody>
+ </table>
+</div>
+
+<script>
+ // ĐÃ GẮN SẴN LINK DATABASE CỦA BẠN (với lệnh lấy 20 dòng cuối)
+ const DB_URL = "https://vuonthongminh-ffe93-default-rtdb.firebaseio.com/history.json?orderBy=\"$key\"&limitToLast=20";
+
+ async function loadHistory() {
+   try {
+     let response = await fetch(DB_URL);
+     let data = await response.json();
+     
+     let html = "";
+     if(data) {
+       // Chuyển object thành mảng
+       let arr = Object.values(data);
+       // Đảo ngược để xem mới nhất trước
+       arr.reverse(); 
+       
+       arr.forEach(item => {
+         let isBat = item.action.includes("BAT");
+         let badge = isBat 
+             ? `<span class="badge-on">BẬT BƠM</span>` 
+             : `<span class="badge-off">TẮT BƠM</span>`;
+         
+         html += `<tr>
+           <td>${item.time}</td>
+           <td>${badge}</td>
+           <td>${item.soil}</td>
+         </tr>`;
+       });
+       
+       document.getElementById("tableBody").innerHTML = html;
+       document.getElementById("status").style.display = "none";
+       document.getElementById("logTable").style.display = "table";
+     } else {
+       document.getElementById("status").innerText = "Chưa có dữ liệu lịch sử nào.";
+     }
+     
+   } catch (e) {
+     console.error(e);
+     document.getElementById("status").innerText = "Lỗi kết nối! Kiểm tra lại Link hoặc Rules.";
+   }
+ }
+
+ // Tải ngay khi mở và cập nhật mỗi 5 giây
+ loadHistory();
+ setInterval(loadHistory, 5000);
+</script>
+
+</body>
+</html>
